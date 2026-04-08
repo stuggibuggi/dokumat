@@ -1,0 +1,370 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dokumat</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+  <section id="auth-screen" class="auth-screen">
+    <div class="auth-panel">
+      <div class="auth-brand">
+        <h1>Dokumat</h1>
+        <p>Bitte anmelden oder registrieren, um die Dokumentenlenkung zu öffnen.</p>
+      </div>
+      <div class="auth-tabs">
+        <button id="show-login" class="auth-tab active" type="button">Anmelden</button>
+        <button id="show-register" class="auth-tab" type="button">Registrieren</button>
+      </div>
+      <form id="login-screen-form" class="stack">
+        <label class="field-label" for="login-screen-username">Benutzername</label>
+        <input id="login-screen-username" type="text" autocomplete="username" required>
+        <label class="field-label" for="login-screen-password">Passwort</label>
+        <input id="login-screen-password" type="password" autocomplete="current-password" required>
+        <button type="submit">Anmelden</button>
+      </form>
+      <form id="register-form" class="stack" hidden>
+        <label class="field-label" for="register-display-name">Anzeigename</label>
+        <input id="register-display-name" type="text" required>
+        <label class="field-label" for="register-username">Benutzername</label>
+        <input id="register-username" type="text" autocomplete="username" required>
+        <label class="field-label" for="register-email">E-Mail</label>
+        <input id="register-email" type="text">
+        <label class="field-label" for="register-password">Passwort</label>
+        <input id="register-password" type="password" autocomplete="new-password" required>
+        <button type="submit">Registrieren und anmelden</button>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-shell" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="brand card">
+        <div class="brand-copy">
+          <h1>Dokumat</h1>
+          <p>Dokumentenlenkung mit Versionen, Freigaben und technischer Dokumentanalyse.</p>
+        </div>
+        <div id="status-pill" class="pill">Bereit</div>
+      </div>
+
+      <section class="card stack auth-card">
+        <div class="row-between">
+          <h2>Konto</h2>
+          <button id="logout-button" type="button" class="button-secondary" hidden>Abmelden</button>
+        </div>
+        <form id="login-form" class="stack" hidden></form>
+        <div id="session-panel" class="stack compact" hidden>
+          <div><strong id="session-name">Nicht angemeldet</strong></div>
+          <div id="session-meta" class="muted">Bitte anmelden.</div>
+        </div>
+      </section>
+
+      <section class="card stack documents-card">
+        <div class="row-between">
+          <h2>Dokumente</h2>
+          <button id="refresh-documents" class="button-secondary" type="button">Aktualisieren</button>
+        </div>
+        <div id="document-list" class="stack compact"></div>
+      </section>
+    </aside>
+
+    <main class="main-area">
+      <section class="hero card">
+        <div class="hero-copy">
+          <h2 id="hero-title">Willkommen</h2>
+          <p id="hero-subtitle">Wähle links ein Dokument oder starte einen neuen Import.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="checkout-document" class="button-secondary" type="button" disabled>Auschecken</button>
+          <button id="cancel-checkout-document" class="button-secondary" type="button" disabled>Checkout lösen</button>
+          <button id="submit-review-document" class="button-secondary" type="button" disabled>Zur Prüfung einreichen</button>
+          <button id="approve-document" class="button-secondary" type="button" disabled>Genehmigen</button>
+          <button id="reject-document" class="button-secondary" type="button" disabled>Ablehnen</button>
+          <button id="release-document" class="button-secondary" type="button" disabled>Freigeben</button>
+          <button id="reprocess-document" class="button-secondary" type="button" disabled>Neu zerlegen</button>
+          <button id="analyze-document" class="button-secondary" type="button" disabled>OpenAI analysieren</button>
+          <button id="refresh-embeddings-document" class="button-secondary" type="button" disabled>Embeddings neu erzeugen</button>
+          <button id="cancel-document" class="button-secondary" type="button" disabled>Verarbeitung abbrechen</button>
+        </div>
+      </section>
+
+      <nav class="page-nav card" aria-label="Hauptseiten">
+        <button class="page-button active" type="button" data-page="cockpit">Cockpit</button>
+        <button class="page-button" type="button" data-page="documents">Dokumente</button>
+        <button class="page-button" type="button" data-page="quality">Qualität</button>
+        <button class="page-button" type="button" data-page="search">Suche</button>
+        <button id="admin-page-button" class="page-button" type="button" data-page="admin" hidden>Admin</button>
+      </nav>
+
+      <section id="page-cockpit" class="page-panel active stack">
+        <nav class="subtabs card" aria-label="Cockpit-Reiter">
+          <button class="tab-button active" type="button" data-tab="overview">Übersicht</button>
+          <button class="tab-button" type="button" data-tab="status">Status</button>
+        </nav>
+
+        <section id="tab-overview" class="tab-panel active stack">
+          <section id="summary-grid" class="summary-grid"></section>
+
+          <section class="card stack">
+            <div class="row-between">
+              <h2>Analyseüberblick</h2>
+              <span id="analysis-status-badge" class="status-badge">Unbekannt</span>
+            </div>
+            <div id="analysis-status-text" class="muted">Noch keine Analyseinformationen vorhanden.</div>
+            <div id="document-status-list" class="status-list"></div>
+          </section>
+        </section>
+
+        <section id="tab-status" class="tab-panel stack">
+          <section class="card stack">
+            <div class="row-between">
+              <h2>Lenkungsstatus</h2>
+              <span id="managed-document-meta" class="muted">Noch kein Dokument ausgewählt.</span>
+            </div>
+            <div id="version-history" class="stack compact"></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="page-documents" class="page-panel stack">
+        <nav class="subtabs card" aria-label="Dokument-Reiter">
+          <button class="tab-button" type="button" data-tab="workspace">Arbeitsbereich</button>
+          <button class="tab-button" type="button" data-tab="document">Inhalt</button>
+        </nav>
+
+        <section id="tab-workspace" class="tab-panel stack">
+          <div class="workspace-grid">
+            <section class="card stack">
+              <div class="row-between">
+                <h2>Neues Dokument</h2>
+                <span class="muted">Check-in startet Version 1</span>
+              </div>
+              <form id="upload-form" class="stack">
+                <label class="field-label" for="upload-title">Dokumenttitel</label>
+                <input id="upload-title" type="text" placeholder="z. B. Fachkonzept CRM">
+                <label class="field-label" for="upload-description">Beschreibung</label>
+                <textarea id="upload-description" rows="3" placeholder="Kurzbeschreibung des fachlichen Dokuments"></textarea>
+                <label class="field-label" for="upload-change-summary">Änderungshinweis</label>
+                <input id="upload-change-summary" type="text" placeholder="z. B. Initiale Fassung">
+                <label class="field-label" for="upload-file">PDF hochladen</label>
+                <input id="upload-file" type="file" accept="application/pdf" required>
+                <button type="submit">Neues Dokument anlegen</button>
+              </form>
+            </section>
+
+            <section class="card stack">
+              <div class="row-between">
+                <h2>Neue Version</h2>
+                <span class="muted">Nur für ausgecheckte Dokumente</span>
+              </div>
+              <form id="checkin-form" class="stack">
+                <label class="field-label" for="checkin-summary">Check-in Änderung</label>
+                <input id="checkin-summary" type="text" placeholder="z. B. Kapitel 4 aktualisiert">
+                <label class="field-label" for="checkin-file">Neue Version hochladen</label>
+                <input id="checkin-file" type="file" accept="application/pdf">
+                <button id="checkin-submit" type="submit" class="button-secondary">Einchecken</button>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-document" class="tab-panel stack">
+          <section class="card stack">
+            <div class="row-between">
+              <h2>Abschnitte</h2>
+              <div class="section-toolbar">
+                <div id="section-text-mode" class="segmented-control" aria-label="Textmodus Abschnitt">
+                  <button class="mode-button active" type="button" data-mode="cleaned_text">Clean</button>
+                  <button class="mode-button" type="button" data-mode="raw_text_exact">Raw</button>
+                  <button class="mode-button" type="button" data-mode="markdown_text">Markdown</button>
+                </div>
+                <span id="section-count" class="muted">0 Einträge</span>
+              </div>
+            </div>
+            <div id="section-list" class="stack"></div>
+          </section>
+
+          <div class="split-grid">
+            <section class="card stack">
+              <div class="row-between">
+                <h2>Bilder</h2>
+                <span id="image-count" class="muted">0 Einträge</span>
+              </div>
+              <div id="image-grid" class="image-grid"></div>
+            </section>
+
+            <section class="card stack">
+              <div class="row-between">
+                <h2>Seitenvorschau</h2>
+                <span class="muted">Erste 10 Seiten</span>
+              </div>
+              <div id="page-list" class="stack"></div>
+            </section>
+          </section>
+        </section>
+      </section>
+
+      <section id="page-quality" class="page-panel stack">
+        <nav class="subtabs card" aria-label="Qualitäts-Reiter">
+          <button class="tab-button" type="button" data-tab="outline">Gliederung</button>
+          <button class="tab-button" type="button" data-tab="templates">Vorlagen</button>
+        </nav>
+
+        <section id="tab-outline" class="tab-panel stack">
+          <div class="workspace-grid">
+            <section class="card stack">
+              <div class="row-between">
+                <h2>Gliederungsprüfung</h2>
+                <span class="muted">Einzeldatei oder aktuelles Dokument</span>
+              </div>
+              <form id="outline-form" class="stack">
+                <label class="field-label" for="outline-file">PDF auswählen</label>
+                <input id="outline-file" type="file" accept="application/pdf" required>
+                <button type="submit" class="button-secondary">Mit OpenAI prüfen</button>
+              </form>
+              <button id="outline-current-document" type="button" class="button-secondary">Aktuelles Dokument prüfen</button>
+            </section>
+
+            <section class="card stack">
+              <div class="row-between">
+                <h2>Ergebnis</h2>
+                <span id="outline-meta" class="muted">Noch keine Prüfung ausgeführt.</span>
+              </div>
+              <div id="outline-tree" class="outline-tree empty-state">Noch keine Gliederung vorhanden.</div>
+              <details class="outline-markdown-card">
+                <summary>Rohansicht</summary>
+                <pre id="outline-markdown" class="preformatted">Noch keine Rohansicht vorhanden.</pre>
+              </details>
+              <details class="outline-markdown-card">
+                <summary>Chunk-Debug</summary>
+                <div id="outline-chunks" class="outline-tree empty-state">Noch keine Chunk-Daten vorhanden.</div>
+              </details>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-templates" class="tab-panel stack">
+          <section class="card stack">
+            <div class="row-between">
+              <h2>Vorlagenbibliothek</h2>
+              <button id="refresh-templates" class="button-secondary" type="button">Aktualisieren</button>
+            </div>
+            <form id="template-upload-form" class="stack form-inline">
+              <label class="field-label" for="template-upload-file">Template-PDF hochladen</label>
+              <input id="template-upload-file" type="file" accept="application/pdf" required>
+              <button type="submit" class="button-secondary">Vorlage auslesen</button>
+            </form>
+            <div id="template-list" class="stack compact"></div>
+          </section>
+
+          <section class="card stack">
+            <div class="row-between">
+              <h2>Vorlage und Abgleich</h2>
+              <div class="hero-actions">
+                <button id="cancel-template" type="button" class="button-secondary" disabled>Vorlagenanalyse abbrechen</button>
+                <button id="run-structure-mapping" type="button" class="button-secondary" disabled>KI-Strukturmapping</button>
+                <button id="run-template-check-sample" type="button" class="button-secondary" disabled>Testlauf 3 Abschnitte</button>
+                <button id="run-template-check" type="button" class="button-secondary" disabled>Aktuelles Dokument gegen Vorlage prüfen</button>
+              </div>
+            </div>
+            <div id="template-meta" class="muted">Noch keine Vorlage ausgewählt.</div>
+            <div class="template-compare-grid">
+              <section class="stack">
+                <div class="row-between">
+                  <h3>Heuristische Zuordnung</h3>
+                  <div class="hero-actions">
+                    <button id="refresh-template-matches" type="button" class="button-secondary" disabled>Passende Abschnitte laden</button>
+                    <button id="select-all-template-sections" type="button" class="button-secondary" disabled>Alle auswählen</button>
+                    <button id="select-none-template-sections" type="button" class="button-secondary" disabled>Auswahl leeren</button>
+                  </div>
+                </div>
+                <div id="template-match-list" class="stack compact"></div>
+              </section>
+              <section class="stack">
+                <div class="row-between">
+                  <h3>KI-Strukturmapping</h3>
+                  <span class="muted">Vergleich nur aus Struktur-JSON und Abschnittstext</span>
+                </div>
+                <div id="structure-mapping-list" class="stack compact"></div>
+              </section>
+            </div>
+            <div id="template-section-list" class="stack compact"></div>
+          </section>
+
+          <section class="card stack">
+            <div class="row-between">
+              <h2>Prüfergebnis</h2>
+              <span id="template-check-meta" class="muted">Noch keine Prüfung ausgeführt.</span>
+            </div>
+            <div id="template-check-summary" class="muted">Wähle eine Vorlage und ein Dokument aus, um die Prüfung zu starten.</div>
+            <div id="template-check-score-grid" class="summary-grid"></div>
+            <div id="template-gap-list" class="stack compact"></div>
+            <div id="template-check-results" class="stack"></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="page-search" class="page-panel stack">
+        <section class="card stack">
+          <div class="row-between">
+            <h2>Semantische Suche</h2>
+            <span class="muted">Hybride Suche aus Bedeutung und Volltext.</span>
+          </div>
+          <form id="semantic-search-form" class="stack">
+            <input id="semantic-search-query" type="text" placeholder="z. B. Berechtigungskonzept Benutzerrollen" required>
+            <div class="search-controls">
+              <label class="radio-option">
+                <input id="semantic-search-scope-all" type="radio" name="semantic-search-scope" value="all" checked>
+                <span>Alle Dokumente</span>
+              </label>
+              <label class="radio-option">
+                <input id="semantic-search-scope-current" type="radio" name="semantic-search-scope" value="current">
+                <span>Nur aktuelles Dokument</span>
+              </label>
+              <button type="submit">Suchen</button>
+            </div>
+          </form>
+          <div id="semantic-search-meta" class="muted">Noch keine Suche ausgeführt.</div>
+          <div id="semantic-search-results" class="stack"></div>
+        </section>
+      </section>
+
+      <section id="page-admin" class="page-panel stack">
+        <section class="card stack">
+          <div class="row-between">
+            <h2>Benutzerverwaltung</h2>
+            <button id="refresh-users" class="button-secondary" type="button">Aktualisieren</button>
+          </div>
+          <div id="admin-user-list" class="stack compact"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <template id="document-item-template">
+    <button class="document-item" type="button">
+      <div class="document-item-header">
+        <span class="document-title"></span>
+        <span class="document-status-dot"></span>
+      </div>
+      <span class="document-meta"></span>
+      <div class="document-submeta"></div>
+    </button>
+  </template>
+
+  <template id="template-item-template">
+    <button class="document-item" type="button">
+      <div class="document-item-header">
+        <span class="document-title"></span>
+        <span class="document-status-dot"></span>
+      </div>
+      <span class="document-meta"></span>
+      <div class="document-submeta"></div>
+    </button>
+  </template>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

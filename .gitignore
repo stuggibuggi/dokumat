@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+storage/
+.env
+output/
+.playwright-cli/
+*.pdf
+*.zip
+*.exe
