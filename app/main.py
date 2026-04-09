@@ -88,6 +88,11 @@ def index() -> FileResponse:
     return FileResponse(settings.base_dir / "frontend" / "index.html")
 
 
+@app.get("/index.html", include_in_schema=False)
+def index_html() -> FileResponse:
+    return FileResponse(settings.base_dir / "frontend" / "index.html")
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
