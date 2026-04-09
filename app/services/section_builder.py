@@ -91,7 +91,11 @@ class SectionBuilder:
         current = RawSection(title="Dokumentanfang", level=1, start_page=1, end_page=1, sort_index=1)
 
         for page in pages:
-            heading_map = matched_headings.get(page.page_number, {}) if matched_headings else {candidate.line_index: candidate for candidate in self._valid_headings(page.headings)}
+            heading_map = (
+                matched_headings.get(page.page_number, {})
+                if matched_headings
+                else {candidate.line_index: candidate for candidate in self._valid_content_headings(page.headings)}
+            )
             line_index = 0
 
             while line_index < len(page.lines):
@@ -132,6 +136,9 @@ class SectionBuilder:
 
     def _valid_headings(self, headings: list[HeadingCandidate]) -> list[HeadingCandidate]:
         return [heading for heading in headings if heading.confidence >= 0.6]
+
+    def _valid_content_headings(self, headings: list[HeadingCandidate]) -> list[HeadingCandidate]:
+        return [heading for heading in self._valid_headings(headings) if not self._looks_like_toc_entry(heading.text)]
 
     def _match_template_headings(
         self, pages: list[ExtractedPage], template_sections: list[TemplateSection]
@@ -230,4 +237,9 @@ class SectionBuilder:
         return re.sub(r'\s+', ' ', cleaned).strip()
 
     def _looks_like_toc_entry(self, value: str) -> bool:
+        normalized = self._normalize_heading_text(value)
+        if normalized in {"table of contents", "contents", "inhaltsverzeichnis"}:
+            return True
+        if normalized.startswith(("table of contents ", "contents ", "inhaltsverzeichnis ")):
+            return True
         return bool(re.search(r'\.{4,}|\s+\d+$', value))

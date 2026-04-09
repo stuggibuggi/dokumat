@@ -517,8 +517,14 @@ class TemplateReviewService:
         return check_payload
 
     def _check_template_cancelled(self, db: Session, template: ReviewTemplate) -> None:
-        db.refresh(template)
-        if template.extra_metadata.get("cancel_requested") or template.status == "cancelling":
+        state = db.execute(
+            select(ReviewTemplate.status, ReviewTemplate.extra_metadata).where(ReviewTemplate.id == template.id)
+        ).first()
+        if state is None:
+            raise JobCancelledError()
+        status, extra_metadata = state
+        metadata = extra_metadata or {}
+        if metadata.get("cancel_requested") or status == "cancelling":
             raise JobCancelledError()
 
     def _mark_template_cancelled(self, db: Session, template: ReviewTemplate) -> None:
