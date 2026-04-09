@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -8,8 +8,12 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
+from app.db import is_pgvector_enabled
 from app.models import Document, ManagedDocument, ManagedDocumentVersion, User
 from app.services.ingestion import DocumentIngestionService
+
+settings = get_settings()
 
 
 class DocumentControlService:
@@ -75,7 +79,7 @@ class DocumentControlService:
             raise HTTPException(status_code=409, detail="Dokument ist bereits ausgecheckt")
 
         managed_document.checked_out_by_id = current_user.id
-        managed_document.checked_out_at = datetime.now(UTC)
+        managed_document.checked_out_at = datetime.now(timezone.utc)
         managed_document.status = "checked_out"
         db.add(managed_document)
         db.commit()
@@ -164,7 +168,7 @@ class DocumentControlService:
             raise HTTPException(status_code=409, detail="Aktuelle Version ist nicht zur Genehmigung eingereicht")
         version.status = "approved"
         version.reviewed_by_id = current_user.id
-        version.reviewed_at = datetime.now(UTC)
+        version.reviewed_at = datetime.now(timezone.utc)
         version.review_comment = comment.strip() or None
         db.add(version)
         managed_document.status = "approved"
@@ -182,7 +186,7 @@ class DocumentControlService:
             raise HTTPException(status_code=400, detail="Bitte eine Begründung für die Ablehnung angeben")
         version.status = "rejected"
         version.reviewed_by_id = current_user.id
-        version.reviewed_at = datetime.now(UTC)
+        version.reviewed_at = datetime.now(timezone.utc)
         version.review_comment = comment.strip()
         db.add(version)
         managed_document.status = "rejected"
@@ -198,7 +202,7 @@ class DocumentControlService:
             raise HTTPException(status_code=409, detail="Nur genehmigte Versionen können freigegeben werden")
         version.status = "released"
         version.reviewed_by_id = current_user.id
-        version.reviewed_at = datetime.now(UTC)
+        version.reviewed_at = datetime.now(timezone.utc)
         if comment.strip():
             version.review_comment = comment.strip()
         db.add(version)
@@ -235,6 +239,7 @@ class DocumentControlService:
                 "owner_id": managed_document.owner_id,
                 "checked_out_by_id": managed_document.checked_out_by_id,
                 "current_document": current_document_payload,
+                "analysis_workflow": self.build_analysis_workflow(managed_document, current_document),
                 "versions": [self.serialize_version(item) for item in managed_document.versions],
             }
         )
@@ -263,3 +268,134 @@ class DocumentControlService:
         if version is None:
             raise HTTPException(status_code=409, detail="Dokument besitzt noch keine Version")
         return version
+
+    def build_analysis_workflow(self, managed_document: ManagedDocument, current_document: Document | None) -> dict | None:
+        del managed_document
+        if current_document is None:
+            return None
+
+        document_status = current_document.status or "unknown"
+        has_extraction = bool(current_document.page_count or current_document.pages or current_document.sections or current_document.images)
+        outline_available = bool(getattr(current_document, "outline_available", False))
+        embeddings_available = bool(getattr(current_document, "embeddings_available", False))
+        pgvector_available = is_pgvector_enabled()
+        document_updated_at = current_document.updated_at
+        outline_run_at = self._resolve_outline_timestamp(current_document)
+
+        steps = [
+            self._build_extract_step(document_status, has_extraction, document_updated_at),
+            self._build_outline_step(has_extraction, outline_available, outline_run_at),
+            self._build_analysis_step(document_status, has_extraction, document_updated_at),
+            self._build_embedding_step(document_status, has_extraction, embeddings_available, pgvector_available, document_updated_at),
+        ]
+
+        next_action = "Dokument ist technisch vollständig verarbeitet."
+        if steps[0]["status"] == "current":
+            next_action = "Lokale Zerlegung läuft gerade."
+        elif steps[0]["status"] == "failed":
+            next_action = "Lokale Zerlegung fehlgeschlagen. Bitte Dokument neu verarbeiten."
+        elif steps[1]["status"] == "pending":
+            next_action = "Als Nächstes sollte die Gliederung geprüft werden."
+        elif steps[2]["status"] == "current":
+            next_action = "OpenAI-Analyse läuft gerade."
+        elif steps[2]["status"] == "failed":
+            next_action = "Analyse fehlgeschlagen. Bitte Analyse erneut starten."
+        elif steps[2]["status"] == "pending":
+            next_action = "Als Nächstes sollte die Analyse gestartet werden."
+        elif steps[3]["status"] == "current":
+            next_action = "Embeddings werden gerade erzeugt oder aktualisiert."
+        elif steps[3]["status"] == "pending":
+            next_action = "Embeddings können jetzt ergänzt oder aktualisiert werden."
+
+        return {
+            "current_status": document_status,
+            "recommended_order_note": (
+                "Empfohlene Reihenfolge: 1. lokal zerlegen, 2. Gliederung prüfen, "
+                "3. Analyse ausführen, 4. Embeddings nur bei Bedarf ergänzen oder aktualisieren."
+            ),
+            "next_action": next_action,
+            "steps": steps,
+        }
+
+    def _build_extract_step(self, document_status: str, has_extraction: bool, timestamp: datetime | None) -> dict:
+        status = "pending"
+        if document_status in {"queued", "extracting"}:
+            status = "current"
+        elif document_status == "failed" and not has_extraction:
+            status = "failed"
+        elif has_extraction or document_status in {"extracted", "analyzing", "completed", "cancelled", "cancelling"}:
+            status = "completed"
+        return {
+            "key": "extract",
+            "label": "1. Lokal zerlegen",
+            "status": status,
+            "detail": "PDF in Seiten, Abschnitte und Bilder zerlegen.",
+            "last_run_at": timestamp if status in {"completed", "current"} else None,
+        }
+
+    def _build_outline_step(self, has_extraction: bool, outline_available: bool, timestamp: datetime | None) -> dict:
+        status = "blocked"
+        if has_extraction:
+            status = "completed" if outline_available else "pending"
+        return {
+            "key": "outline",
+            "label": "2. Gliederung prüfen",
+            "status": status,
+            "detail": "Hierarchie und Kapitelstruktur des Dokuments prüfen.",
+            "last_run_at": timestamp if status == "completed" else None,
+        }
+
+    def _build_analysis_step(self, document_status: str, has_extraction: bool, timestamp: datetime | None) -> dict:
+        if not has_extraction:
+            status = "blocked"
+        elif document_status == "analyzing":
+            status = "current"
+        elif document_status == "completed":
+            status = "completed"
+        elif document_status == "failed":
+            status = "failed"
+        else:
+            status = "pending"
+        return {
+            "key": "analysis",
+            "label": "3. Analyse ausführen",
+            "status": status,
+            "detail": "Abschnitte normalisieren, Zusammenfassungen und Schlagwörter erzeugen.",
+            "last_run_at": timestamp if status in {"completed", "current"} else None,
+        }
+
+    def _build_embedding_step(
+        self,
+        document_status: str,
+        has_extraction: bool,
+        embeddings_available: bool,
+        pgvector_available: bool,
+        timestamp: datetime | None,
+    ) -> dict:
+        if not pgvector_available:
+            status = "unavailable"
+        elif not has_extraction:
+            status = "blocked"
+        elif embeddings_available:
+            status = "completed"
+        elif document_status == "analyzing":
+            status = "current"
+        else:
+            status = "pending"
+        return {
+            "key": "embeddings",
+            "label": "4. Embeddings",
+            "status": status,
+            "detail": "Meist schon Teil der Analyse. Separat nur nötig, wenn Vektoren fehlen oder neu berechnet werden sollen.",
+            "last_run_at": timestamp if status in {"completed", "current"} else None,
+        }
+
+    def _resolve_outline_timestamp(self, current_document: Document) -> datetime | None:
+        outline_path = current_document.extra_metadata.get("outline_result_storage_path")
+        if not outline_path:
+            return None
+        try:
+            stat = (settings.base_dir / outline_path).stat()
+        except OSError:
+            return None
+        return datetime.fromtimestamp(stat.st_mtime, timezone.utc)

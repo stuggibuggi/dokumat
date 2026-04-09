@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import secrets
@@ -129,14 +129,14 @@ class AuthService:
         )
         if session is None or session.user is None:
             raise HTTPException(status_code=401, detail="Sitzung ungültig")
-        if session.expires_at <= datetime.now(UTC):
+        if session.expires_at <= datetime.now(timezone.utc):
             db.delete(session)
             db.commit()
             raise HTTPException(status_code=401, detail="Sitzung abgelaufen")
         if not session.user.is_active:
             raise HTTPException(status_code=403, detail="Benutzerkonto ist deaktiviert")
 
-        session.last_seen_at = datetime.now(UTC)
+        session.last_seen_at = datetime.now(timezone.utc)
         db.add(session)
         db.commit()
         db.refresh(session.user)
@@ -289,12 +289,12 @@ class AuthService:
 
     def _create_session(self, db: Session, user: User) -> tuple[User, str, datetime]:
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(UTC) + timedelta(hours=self.settings.session_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=self.settings.session_hours)
         session = AuthSession(
             user_id=user.id,
             token_hash=self._hash_token(token),
             expires_at=expires_at,
-            last_seen_at=datetime.now(UTC),
+            last_seen_at=datetime.now(timezone.utc),
         )
         db.add(session)
         db.commit()
@@ -328,7 +328,7 @@ class AuthService:
 def build_auth_response(user: User, token: str, settings: Settings) -> dict[str, Any]:
     return {
         "token": token,
-        "expires_at": datetime.now(UTC) + timedelta(hours=settings.session_hours),
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=settings.session_hours),
         "user": user,
         "available_auth_modes": AuthService(settings).available_auth_modes(),
     }
